@@ -13,11 +13,6 @@
         .container { max-width: 900px; margin: 40px auto; padding: 30px; background-color: #fff; border-radius: 8px; box-shadow: 0 0 15px rgba(0, 0, 0, 0.2); }
         h1 { color: #880e4f; text-align: center; border-bottom: 2px solid #c2185b; padding-bottom: 10px; }
         
-        /* Drop Area - แสดงเฉพาะผู้ดูแลระบบ */
-        #drop-area-container { margin-bottom: 20px; }
-        #drop-area { border: 2px dashed #c2185b; border-radius: 10px; padding: 30px; text-align: center; cursor: pointer; background-color: #fce4ec; }
-        #drop-area.highlight { background-color: #f8bbd0; border-color: #880e4f; }
-        
         /* Input and Button */
         .input-group { display: flex; gap: 10px; margin-top: 20px; }
         input[type="text"] { flex-grow: 1; padding: 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
@@ -28,37 +23,24 @@
         #status-message { margin-top: 15px; padding: 10px; border-radius: 4px; text-align: center; font-weight: bold; }
         .status-success { background-color: #e8f5e9; color: #388e3c; }
         .status-error { background-color: #ffcdd2; color: #d32f2f; }
+        .status-loading { background-color: #fff3e0; color: #ff9800; }
+
         .tawi50-form { border: 3px solid #880e4f; padding: 25px; margin-top: 25px; border-radius: 6px; background-color: #ffffff; }
         .tawi50-form h3 { text-align: center; color: #880e4f; margin-top: 0; border-bottom: 1px solid #c2185b; padding-bottom: 10px; }
         .tawi50-form table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         .tawi50-form th, .tawi50-form td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 14px; word-wrap: break-word; }
         .tawi50-form th { background-color: #f8e5ed; color: #880e4f; width: 35%; }
         .tawi50-form tr:nth-child(even) { background-color: #f9f9f9; }
-        
-        /* New button for clearing data */
-        #clearDataBtn { margin-top: 10px; padding: 8px 15px; background-color: #e57373; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.3s; display: none; }
-        #clearDataBtn:hover { background-color: #d32f2f; }
     </style>
 </head>
-<body>
+<body onload="initialize()">
     <div class="container">
         <h1>ค้นหาหนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ)</h1>
         
-        <div id="drop-area-container">
-            <div id="drop-area">
-                <p>1. **ผู้ดูแลระบบ (คุณ):** ลากไฟล์ **.xlsx** หรือ **.csv** ที่มีข้อมูลมาวางที่นี่
-                <label for="fileInput" style="color: #880e4f; text-decoration: underline; cursor: pointer;">หรือคลิกเพื่อเลือกไฟล์</label></p>
-                <input type="file" id="fileInput" accept=".xlsx, .xlsm, .csv" style="display: none;" onchange="handleFiles(this.files)">
-                <p style="font-size: 12px; color: #555;">(ไฟล์จะถูกประมวลผลแบบส่วนตัวบนเครื่องของผู้ใช้ และไม่ถูกส่งออกไปที่อื่น)</p>
-                <p style="font-size: 14px; color: #d32f2f; font-weight: bold;">**สำคัญ:** กรุณาใช้ไฟล์ .xlsx หรือ .csv ธรรมดาเท่านั้น ห้ามใช้ไฟล์ .xlsm</p>
-            </div>
-        </div>
-
-        <div id="status-message"></div>
-        <button id="clearDataBtn" onclick="clearStoredData()">คลิกที่นี่เพื่อล้างข้อมูลเดิมและอัปโหลดไฟล์ใหม่</button>
+        <div id="status-message" class="status-loading">กำลังโหลดข้อมูล...</div>
 
         <div class="input-group">
-            <input type="text" id="taxIdInput" placeholder="2. กรอก เลขประจำตัวผู้เสียภาษีอากร (13 หลัก) ของท่าน" maxlength="13">
+            <input type="text" id="taxIdInput" placeholder="กรุณากรอก เลขประจำตัวผู้เสียภาษีอากร (13 หลัก) ของท่าน" maxlength="13">
             <button onclick="searchTawi50()">ค้นหาข้อมูล</button>
         </div>
 
@@ -67,208 +49,121 @@
     </div>
 
     <script>
+        // *** 🔴 ลิงก์ Google Sheets CSV ของคุณ ที่ถูกแปลงมาแล้ว (ใช้ได้ข้ามเครื่อง) ***
+        const GOOGLE_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1rpXCyMHEyLmkyZsx1JjMB81kMFeBeNBtcwfhpeiMUpE/export?format=csv&gid=0'; 
+        
         let tawi50Data = []; 
         let taxIdKeyName = 'เลขประจำตัวผู้เสียภาษีอากร'; 
         
         // --- DOM Elements ---
-        const dropAreaContainer = document.getElementById('drop-area-container');
-        const dropArea = document.getElementById('drop-area');
         const statusMessage = document.getElementById('status-message');
         const resultOutput = document.getElementById('resultOutput');
-        const clearDataBtn = document.getElementById('clearDataBtn');
         
-        // --- Handlers (เหมือนเดิม) ---
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropArea.addEventListener(eventName, preventDefaults, false);
-            document.body.addEventListener(eventName, preventDefaults, false);
-        });
-        ['dragenter', 'dragover'].forEach(eventName => {
-            dropArea.addEventListener(eventName, () => dropArea.classList.add('highlight'), false);
-        });
-        ['dragleave', 'drop'].forEach(eventName => {
-            dropArea.addEventListener(eventName, () => dropArea.classList.remove('highlight'), false);
-        });
-        dropArea.addEventListener('drop', handleDrop, false);
-
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-
-        function handleDrop(e) {
-            let dt = e.dataTransfer;
-            let files = dt.files;
-            handleFiles(files);
-        }
-        
-        // --- NEW: Function to clear data from Local Storage ---
-        function clearStoredData() {
-            localStorage.removeItem('tawi50Data');
-            tawi50Data = [];
+        // --- ฟังก์ชันดึงข้อมูลจาก Google Sheets ---
+        async function fetchDataFromSheet() {
+            statusMessage.className = 'status-loading';
+            statusMessage.innerHTML = 'กำลังโหลดข้อมูลจาก Server... กรุณารอสักครู่';
             
-            // Restore UI to initial state
-            statusMessage.className = 'status-success';
-            statusMessage.innerHTML = '✅ ข้อมูลเดิมถูกล้างเรียบร้อยแล้ว กรุณาอัปโหลดไฟล์ใหม่';
-            dropAreaContainer.style.display = 'block';
-            clearDataBtn.style.display = 'none';
-            resultOutput.innerHTML = '';
-        }
-        
-        // --- NEW: Function to load data from Local Storage on page load ---
-        function initialize() {
-            const storedData = localStorage.getItem('tawi50Data');
-            if (storedData) {
-                try {
-                    tawi50Data = JSON.parse(storedData); 
-                    
-                    if (tawi50Data.length > 0) {
-                        statusMessage.className = 'status-success';
-                        statusMessage.innerHTML = `✅ โหลดข้อมูลสำเร็จ! พบ ${tawi50Data.length} รายการ (จากหน่วยความจำเครื่อง) **คุณสามารถแชร์ลิงก์นี้ให้ติวเตอร์ใช้ได้เลย**`;
-                        dropAreaContainer.style.display = 'none';
-                        clearDataBtn.style.display = 'block'; // Show clear button for admin
-                    } else {
-                        // Data was stored but empty, clear it and proceed normally
-                        clearStoredData(); 
-                    }
-                } catch (e) {
-                    console.error("Error parsing stored data:", e);
-                    localStorage.removeItem('tawi50Data'); // Clear bad data
-                    statusMessage.className = 'status-error';
-                    statusMessage.innerHTML = '❌ พบข้อมูลเดิมเสียหายในหน่วยความจำเครื่อง กรุณาอัปโหลดไฟล์ใหม่';
+            try {
+                // ดึงไฟล์ CSV จาก URL ที่เผยแพร่
+                const response = await fetch(GOOGLE_SHEET_CSV_URL);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
-            } else {
-                 statusMessage.innerHTML = 'กรุณาอัปโหลดไฟล์ข้อมูลก่อน';
+                const csvText = await response.text();
+
+                // แปลง CSV เป็น Array of Arrays (AOA)
+                const workbook = XLSX.read(csvText, { type: 'string', raw: true }); 
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+
+                const sheetAOA = XLSX.utils.sheet_to_json(worksheet, {
+                    header: 1, 
+                    raw: true, 
+                    defval: "", 
+                    dateNF: 'yyyy-mm-dd' 
+                }); 
+                
+                if (sheetAOA.length < 6) { 
+                    throw new Error('โครงสร้างข้อมูลไม่ถูกต้อง (ต้องมีข้อมูลอย่างน้อย 6 แถว)');
+                }
+                
+                // Header Row 5 (Index 4)
+                const headerRow = sheetAOA[4]; 
+                // Data Rows เริ่มตั้งแต่แถวที่ 6 (Index 5) เป็นต้นไป
+                const dataRows = sheetAOA.slice(5);
+                
+                // คอลัมน์ที่ต้องการดึง: B ถึง O (Index 1 ถึง 14)
+                const COL_START_IDX = 1; // B
+                const COL_END_IDX = 14;  // O
+                
+                let taxIdColIndex = -1;
+                const colMap = {};
+                for (let i = COL_START_IDX; i <= COL_END_IDX; i++) {
+                    const keyName = headerRow[i] ? String(headerRow[i]).trim() : `Col${i}`; 
+                    if (keyName) {
+                        colMap[keyName] = i;
+
+                        if (keyName.includes('เลขประจำตัวผู้เสียภาษีอากร')) {
+                            taxIdColIndex = i;
+                            taxIdKeyName = keyName; 
+                        }
+                    }
+                }
+
+                if (taxIdColIndex === -1) {
+                    throw new Error('ไม่พบชื่อคอลัมน์ "เลขประจำตัวผู้เสียภาษีอากร" ในแถวที่ 5 (คอลัมน์ B-O)');
+                }
+                
+                // ** ประมวลผลและจัดเก็บทุกแถวข้อมูลที่ถูกต้อง **
+                tawi50Data = dataRows.map(dataRow => {
+                    let rowObject = {};
+                    let hasData = false;
+                    
+                    for(const keyName in colMap) {
+                        const colIndex = colMap[keyName];
+                        const value = dataRow[colIndex] || '';
+                        rowObject[keyName] = value;
+                        
+                        if (String(value).trim() !== '') {
+                            hasData = true;
+                        }
+                    }
+                    return hasData ? rowObject : null;
+                }).filter(item => {
+                    if (!item) return false;
+                    const taxId = item[taxIdKeyName]; 
+                    return taxId && String(taxId).trim().replace(/[^0-9]/g, '').length === 13;
+                });
+                
+                if (tawi50Data.length > 0) {
+                    statusMessage.className = 'status-success';
+                    statusMessage.innerHTML = `✅ โหลดข้อมูลสำเร็จ! พบ ${tawi50Data.length} รายการ (จาก Server) **คุณสามารถแชร์ลิงก์นี้ให้ติวเตอร์ใช้ได้เลย**`;
+                } else {
+                    statusMessage.className = 'status-error';
+                    statusMessage.innerHTML = '❌ โหลดข้อมูลสำเร็จ แต่ไม่พบรายการที่มีเลขประจำตัว 13 หลักในแถวข้อมูล';
+                }
+
+            } catch (error) {
+                statusMessage.className = 'status-error';
+                statusMessage.innerHTML = `❌ เกิดข้อผิดพลาดในการโหลดข้อมูล: ${error.message}. กรุณาตรวจสอบลิงก์ Google Sheets และการตั้งค่าแชร์เป็น "ทุกคนที่มีลิงก์เป็นผู้ดู"`;
+                console.error('Error fetching data:', error);
             }
         }
         
-        // ------------------------------------------------
-
-        // ** ฟังก์ชันหลักในการอ่านและประมวลผลไฟล์ Excel/CSV **
-        function handleFiles(files) {
-            if (files.length === 0) return;
-            const file = files[0];
-            const reader = new FileReader();
-            
-            statusMessage.className = 'status-success';
-            statusMessage.innerHTML = `กำลังอ่านไฟล์: ${file.name}... กรุณารอสักครู่`;
-            resultOutput.innerHTML = '';
-            tawi50Data = []; // ล้างข้อมูลเดิม
-
-            reader.onload = function(e) {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, { type: 'array' }); 
-                    
-                    const sheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[sheetName];
-                    
-                    const sheetAOA = XLSX.utils.sheet_to_json(worksheet, {
-                        header: 1, 
-                        raw: true, 
-                        defval: "", 
-                        dateNF: 'yyyy-mm-dd' 
-                    }); 
-                    
-                    if (sheetAOA.length < 6) { 
-                        statusMessage.className = 'status-error';
-                        statusMessage.innerHTML = '❌ โครงสร้างข้อมูลไม่ถูกต้อง (ต้องมีข้อมูลอย่างน้อย 6 แถว)';
-                        return;
-                    }
-                    
-                    // Header Row 5 (Index 4)
-                    const headerRow = sheetAOA[4]; 
-                    // Data Rows เริ่มตั้งแต่แถวที่ 6 (Index 5) เป็นต้นไป
-                    const dataRows = sheetAOA.slice(5);
-                    
-                    // คอลัมน์ที่ต้องการดึง: B ถึง O (Index 1 ถึง 14)
-                    const COL_START_IDX = 1; // B
-                    const COL_END_IDX = 14;  // O
-                    
-                    let taxIdColIndex = -1;
-                    
-                    // Mapping ชื่อคอลัมน์และ Index (ใช้เฉพาะคอลัมน์ B ถึง O)
-                    const colMap = {};
-                    for (let i = COL_START_IDX; i <= COL_END_IDX; i++) {
-                        const keyName = headerRow[i] ? String(headerRow[i]).trim() : `Col${i}`; 
-                        if (keyName) {
-                            colMap[keyName] = i;
-
-                            if (keyName.includes('เลขประจำตัวผู้เสียภาษีอากร')) {
-                                taxIdColIndex = i;
-                                taxIdKeyName = keyName; 
-                            }
-                        }
-                    }
-
-                    if (taxIdColIndex === -1) {
-                        statusMessage.className = 'status-error';
-                        localStorage.removeItem('tawi50Data');
-                        return;
-                    }
-                    
-                    // ** ประมวลผลและจัดเก็บทุกแถวข้อมูลที่ถูกต้อง **
-                    tawi50Data = dataRows.map(dataRow => {
-                        let rowObject = {};
-                        let hasData = false;
-                        
-                        for(const keyName in colMap) {
-                            const colIndex = colMap[keyName];
-                            const value = dataRow[colIndex] || '';
-                            rowObject[keyName] = value;
-                            
-                            if (String(value).trim() !== '') {
-                                hasData = true;
-                            }
-                        }
-                        return hasData ? rowObject : null;
-                    }).filter(item => {
-                        if (!item) return false;
-                        const taxId = item[taxIdKeyName]; 
-                        return taxId && String(taxId).trim().replace(/[^0-9]/g, '').length === 13;
-                    });
-                    
-                    if (tawi50Data.length > 0) {
-                        // ** NEW: SAVE TO LOCAL STORAGE **
-                        localStorage.setItem('tawi50Data', JSON.stringify(tawi50Data)); 
-
-                        statusMessage.className = 'status-success';
-                        statusMessage.innerHTML = `✅ ประมวลผลไฟล์สำเร็จแล้ว! พบ ${tawi50Data.length} รายการ **ตอนนี้ข้อมูลถูกบันทึกในเครื่องคุณแล้ว**`;
-                        dropAreaContainer.style.display = 'none';
-                        clearDataBtn.style.display = 'block';
-                    } else {
-                        // ** NEW: Clear Local Storage if file was processed but yielded no valid data **
-                        localStorage.removeItem('tawi50Data');
-                        
-                        statusMessage.className = 'status-error';
-                        statusMessage.innerHTML = '❌ ประมวลผลสำเร็จ แต่ไม่พบรายการที่มีเลขประจำตัว 13 หลักในแถวข้อมูล (ตั้งแต่แถวที่ 6 ลงไป)';
-                        dropAreaContainer.style.display = 'block';
-                        clearDataBtn.style.display = 'none';
-                    }
-                    
-                } catch (error) {
-                    statusMessage.className = 'status-error';
-                    statusMessage.innerHTML = `❌ เกิดข้อผิดพลาดในการอ่านไฟล์: ${error.message}<br>
-                    <small>คำแนะนำ: กรุณาลองบันทึกไฟล์ Excel เป็นรูปแบบ <b>.xlsx</b> หรือ <b>.csv</b> ธรรมดา</small>`;
-                    console.error(error);
-                }
-            };
-
-            reader.onerror = function() {
-                 statusMessage.className = 'status-error';
-                 statusMessage.innerHTML = '❌ เกิดข้อผิดพลาดในการอ่านไฟล์ กรุณาลองใหม่อีกครั้ง';
-            };
-
-            reader.readAsArrayBuffer(file);
+        // ** ฟังก์ชันเริ่มต้นเมื่อโหลดหน้าเว็บ **
+        function initialize() {
+            fetchDataFromSheet();
         }
 
         // ** ฟังก์ชันค้นหาข้อมูลด้วยเลขประจำตัวผู้เสียภาษีอากร **
         function searchTawi50() {
             const rawInput = document.getElementById('taxIdInput').value.trim();
-            const taxId = rawInput.replace(/[^0-9]/g, ''); // ลบขีดหรืออักขระที่ไม่ใช่ตัวเลข
+            const taxId = rawInput.replace(/[^0-9]/g, ''); 
             resultOutput.innerHTML = ''; 
 
             if (tawi50Data.length === 0) {
-                resultOutput.innerHTML = '<p class="status-error">ยังไม่มีข้อมูลในระบบ กรุณาให้ผู้ดูแลระบบอัปโหลดไฟล์ข้อมูลก่อน</p>';
+                resultOutput.innerHTML = '<p class="status-error">ยังไม่มีข้อมูลในระบบ กรุณารอสักครู่ (หากนานเกิน 1 นาที อาจเกิดข้อผิดพลาดในการโหลดข้อมูล)</p>';
                 return;
             }
 
@@ -277,7 +172,6 @@
                 return;
             }
             
-            // ค้นหาแถวที่ตรงกับเลขประจำตัวผู้เสียภาษีอากร
             const foundData = tawi50Data.find(item => 
                 String(item[taxIdKeyName]).trim().replace(/[^0-9]/g, '') === taxId
             );
@@ -321,9 +215,8 @@
                 resultOutput.innerHTML = '<p class="status-error">🔎 ไม่พบข้อมูลใบทวิ 50 สำหรับเลขประจำตัวผู้เสียภาษีอากรนี้ในระบบ</p>';
             }
         }
-        
-        // ** Run initialization on page load **
-        initialize();
     </script>
 </body>
 </html>
+
+
